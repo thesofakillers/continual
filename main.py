@@ -32,27 +32,10 @@ def main():
         max_steps=1,  # We train for one step per new data sample
         logging_steps=1,
         beta=0.1,
-        # to make it run on cpu if no gpu is available
-        no_cuda=True,
         num_generations=2,
     )
 
-    # We need to set a generation config for the model to generate completions
-    generation_kwargs = {
-        "min_length": -1,  # don't care about min length
-        "top_k": 0.0,  # no top-k sampling
-        "top_p": 1.0,  # no nucleus sampling
-        "do_sample": True,
-        "pad_token_id": None,  # will be set below
-        "max_new_tokens": 50,  # The maximum numbers of tokens to generate
-    }
-
     model = AutoModelForCausalLM.from_pretrained(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        # generation_kwargs["pad_token_id"] = tokenizer.eos_token
 
     # GRPOTrainer instantiation
     # We initialize it with a dummy dataset, as it will be replaced in the loop.
@@ -63,7 +46,6 @@ def main():
         model=model,
         args=training_args,
         train_dataset=initial_dataset,
-        # tokenizer=tokenizer,
         reward_funcs=[reward_len],
         # generation_kwargs=generation_kwargs,
     )
@@ -71,7 +53,7 @@ def main():
     print("Starting training loop, simulating a data stream...")
     # We start from the second sample since we used the first for initialization
     for i, sample in enumerate(full_dataset.select(range(1, len(full_dataset)))):
-        print(f"\n--- Loop {i+1} ---")
+        print(f"\n--- Loop {i + 1} ---")
 
         # Create a new dataset with the single new sample
         # The trainer expects a dataset with a 'prompt' column
@@ -88,7 +70,6 @@ def main():
         print("trainer.train() finished.")
 
         print("Loop finished. Moving to next sample.")
-        time.sleep(1)  # short sleep to see logs
 
 
 if __name__ == "__main__":
