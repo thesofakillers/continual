@@ -1,75 +1,35 @@
-import time
 from datasets import load_dataset, Dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOTrainer, GRPOConfig
 
-import os
-import textwrap
 import warnings
-from collections import defaultdict, deque
-from collections.abc import Sized
 from contextlib import nullcontext
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
 
-import datasets
 import torch
-import torch.utils.data
-import transformers
 from accelerate.utils import (
     broadcast_object_list,
     gather,
     gather_object,
-    is_peft_model,
-    set_seed,
 )
-from datasets import Dataset, IterableDataset
-from packaging import version
 from torch import nn
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from torch.utils.data import DataLoader, Sampler
 from transformers import (
     AutoModelForCausalLM,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    GenerationConfig,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
     Trainer,
-    TrainerCallback,
-    is_wandb_available,
 )
-from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-from transformers.trainer_utils import seed_worker
-from transformers.utils import (
-    is_datasets_available,
-    is_peft_available,
-    is_rich_available,
-)
+
 
 from trl.data_utils import (
     apply_chat_template,
     is_conversational,
     maybe_apply_chat_template,
 )
-from trl.extras.profiling import profiling_context, profiling_decorator
-from trl.extras.vllm_client import VLLMClient
-from trl.import_utils import is_liger_kernel_available, is_vllm_available
+from trl.extras.profiling import profiling_context
 from trl.models import (
-    create_reference_model,
-    prepare_deepspeed,
-    prepare_fsdp,
     unwrap_model_for_generation,
 )
-from trl.models.utils import _ForwardRedirection
-from trl.trainer.callbacks import SyncRefModelCallback
-from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.utils import (
-    disable_dropout_in_model,
-    generate_model_card,
-    get_comet_experiment_url,
     pad,
-    print_prompt_completions_sample,
-    selective_log_softmax,
 )
 
 
