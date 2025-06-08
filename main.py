@@ -46,24 +46,24 @@ from transformers.utils import (
     is_rich_available,
 )
 
-from ..data_utils import (
+from trl.data_utils import (
     apply_chat_template,
     is_conversational,
     maybe_apply_chat_template,
 )
-from ..extras.profiling import profiling_context, profiling_decorator
-from ..extras.vllm_client import VLLMClient
-from ..import_utils import is_liger_kernel_available, is_vllm_available
-from ..models import (
+from trl.extras.profiling import profiling_context, profiling_decorator
+from trl.extras.vllm_client import VLLMClient
+from trl.import_utils import is_liger_kernel_available, is_vllm_available
+from trl.models import (
     create_reference_model,
     prepare_deepspeed,
     prepare_fsdp,
     unwrap_model_for_generation,
 )
-from ..models.utils import _ForwardRedirection
-from .callbacks import SyncRefModelCallback
-from .grpo_config import GRPOConfig
-from .utils import (
+from trl.models.utils import _ForwardRedirection
+from trl.trainer.callbacks import SyncRefModelCallback
+from trl.trainer.grpo_config import GRPOConfig
+from trl.trainer.utils import (
     disable_dropout_in_model,
     generate_model_card,
     get_comet_experiment_url,
@@ -72,18 +72,115 @@ from .utils import (
     selective_log_softmax,
 )
 
-if is_peft_available():
-    from peft import PeftConfig, get_peft_model
 
-if is_liger_kernel_available():
-    from liger_kernel.chunked_loss import LigerFusedLinearGRPOLoss
+# torch.nanstd doesn't exist, so we define it here
+def nanstd(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the standard deviation of a tensor, ignoring NaNs. This function only supports 1D tensors.
 
-if is_vllm_available():
-    from vllm import LLM, SamplingParams
-    from vllm.sampling_params import GuidedDecodingParams
+    Args:
+        tensor (`torch.Tensor`):
+            Input tensor of shape `(N,)`.
 
-if is_wandb_available():
-    import wandb
+    Returns:
+        `torch.Tensor`:
+            Standard deviation of the tensor, ignoring NaNs.
+    """
+    variance = torch.nanmean(
+        (tensor - torch.nanmean(tensor, keepdim=True)) ** 2
+    )  # Compute variance ignoring NaNs
+    count = torch.sum(~torch.isnan(tensor))  # Count of non-NaN values
+    variance *= count / (count - 1)  # Bessel's correction
+    return torch.sqrt(variance)
+
+
+def split_tensor_dict(
+    tensor_dict: dict[str, Optional[torch.Tensor]], num_chunks: int
+) -> list[dict[str, Optional[torch.Tensor]]]:
+    """
+    Splits a dictionary of tensors along the first dimension into `num_chunks` equal parts.
+
+    Example:
+        >>> x = torch.arange(12).reshape(6, 2)
+        >>> y = torch.arange(6).reshape(6, 1)
+        >>> tensor_dict = {"x": x, "y": y}
+        >>> split_tensor_dict(tensor_dict, 3)
+        [
+            {"x": tensor([[0, 1], [2, 3]]), "y": tensor([[0], [1]])},
+            {"x": tensor([[4, 5], [6, 7]]), "y": tensor([[2], [3]])},
+            {"x": tensor([[ 8,  9], [10, 11]]), "y": tensor([[4], [5]])}
+        ]
+    """
+    first_tensor = next(tensor for tensor in tensor_dict.values() if tensor is not None)
+    chunk_size = first_tensor.shape[0] // num_chunks
+    return [
+        {
+            key: (
+                tensor[i * chunk_size : (i + 1) * chunk_size]
+                if tensor is not None
+                else None
+            )
+            for key, tensor in tensor_dict.items()
+        }
+        for i in range(num_chunks)
+    ]
+
+
+def shuffle_tensor_dict(
+    tensor_dict: dict[str, Optional[torch.Tensor]],
+) -> dict[str, Optional[torch.Tensor]]:
+    """
+    Shuffles a dictionary of tensors along the first dimension in unison.
+
+    Example:
+        >>> x = torch.arange(6).reshape(3, 2)
+        >>> y = torch.arange(3).reshape(3, 1)
+        >>> tensor_dict = {"x": x, "y": y}
+        >>> shuffle_tensor_dict(tensor_dict)
+        {'x': tensor([[2, 3],
+                      [0, 1],
+                      [4, 5]]),
+         'y': tensor([[1],
+                      [0],
+                      [2]])}
+    """
+    first_tensor = next(tensor for tensor in tensor_dict.values() if tensor is not None)
+    batch_size = first_tensor.shape[0]
+    permutation = torch.randperm(batch_size)
+    return {
+        key: tensor[permutation] if tensor is not None else None
+        for key, tensor in tensor_dict.items()
+    }
+
+
+def nanmin(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the minimum value of a tensor, ignoring NaNs. This function only supports 1D tensors.
+
+    Args:
+        tensor (`torch.Tensor`): Input tensor of shape `(N,)`.
+
+    Returns:
+        `torch.Tensor`: Minimum value of the tensor, ignoring NaNs. Returns NaN if all values are NaN.
+    """
+    if torch.isnan(tensor).all():
+        return torch.tensor(float("nan"), dtype=tensor.dtype, device=tensor.device)
+    return torch.min(tensor[~torch.isnan(tensor)])
+
+
+def nanmax(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the maximum value of a tensor, ignoring NaNs. This function only supports 1D tensors.
+
+    Args:
+        tensor (`torch.Tensor`): Input tensor of shape `(N,)`.
+
+    Returns:
+        `torch.Tensor`: Maximum value of the tensor, ignoring NaNs. Returns NaN if all values are NaN.
+    """
+    if torch.isnan(tensor).all():
+        return torch.tensor(float("nan"), dtype=tensor.dtype, device=tensor.device)
+    return torch.max(tensor[~torch.isnan(tensor)])
 
 
 def reward_len(completions, **kwargs):
@@ -96,6 +193,8 @@ def reward_len(completions, **kwargs):
 
 
 class MyCustomTrainer(GRPOTrainer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def _generate_and_score_completions(
         self, inputs: list[dict[str, Union[torch.Tensor, Any]]]
@@ -115,7 +214,7 @@ class MyCustomTrainer(GRPOTrainer):
             padding_side="left",
             add_special_tokens=False,
         )
-        prompt_inputs = super()._prepare_inputs(prompt_inputs)
+        prompt_inputs = Trainer._prepare_inputs(self=self, inputs=prompt_inputs)
         prompt_ids, prompt_mask = (
             prompt_inputs["input_ids"],
             prompt_inputs["attention_mask"],
@@ -369,7 +468,9 @@ class MyCustomTrainer(GRPOTrainer):
                         padding_side="right",
                         add_special_tokens=False,
                     )
-                    reward_inputs = super()._prepare_inputs(reward_inputs)
+                    reward_inputs = Trainer._prepare_inputs(
+                        self=self, inputs=reward_inputs
+                    )
                     with torch.inference_mode():
                         rewards_per_func[:, i] = reward_func(**reward_inputs).logits[
                             :, 0
