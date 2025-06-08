@@ -143,12 +143,13 @@ def nanmax(tensor: torch.Tensor) -> torch.Tensor:
     return torch.max(tensor[~torch.isnan(tensor)])
 
 
-def reward_len(completions, **kwargs):
+def reward_len(completions, trainer_instance: Trainer, **kwargs):
     """
     A simple reward function that rewards completions based on their length.
     It rewards completions that are close to 50 characters.
     """
     # The 'completions' argument is a list of strings
+    print(trainer_instance.giulio_logps)
     return [-abs(50 - len(completion)) for completion in completions]
 
 
@@ -354,6 +355,13 @@ class MyCustomTrainer(GRPOTrainer):
         )
 
         with torch.no_grad():
+            self.giulio_logps = self._get_per_token_logps(
+                self.model,
+                prompt_completion_ids,
+                attention_mask,
+                logits_to_keep,
+                batch_size,
+            )
             # When using num_iterations == 1 and steps_per_generation <= gradient_accumulation_steps
             # old_per_token_logps == per_token_logps, so we can skip it's computation here, and use
             # per_token_logps.detach() instead.
@@ -369,6 +377,7 @@ class MyCustomTrainer(GRPOTrainer):
                     logits_to_keep,
                     batch_size,
                 )
+                # self.giulio_logps = old_per_token_logps
             else:
                 old_per_token_logps = None
 
@@ -408,9 +417,8 @@ class MyCustomTrainer(GRPOTrainer):
             )
         ):
             with profiling_context(self, reward_func_name):
-                if isinstance(
-                    reward_func, nn.Module
-                ):  # Module (no PretrainedModel) for compat with compiled models
+                if isinstance(reward_func, nn.Module):
+                    # Module (no PretrainedModel) for compat with compiled models
                     if is_conversational(inputs[0]):
                         messages = [
                             {"messages": p + c} for p, c in zip(prompts, completions)
@@ -440,6 +448,7 @@ class MyCustomTrainer(GRPOTrainer):
                         prompts=prompts,
                         completions=completions,
                         completion_ids=completion_ids_list,
+                        trainer_instance=self,  # RAGa edit
                         **reward_kwargs,
                     )
                     # Convert None values to NaN
