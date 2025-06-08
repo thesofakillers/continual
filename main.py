@@ -150,6 +150,7 @@ def reward_len(completions, trainer_instance: Trainer, **kwargs):
     """
     # The 'completions' argument is a list of strings
     print(trainer_instance.giulio_logps)
+    trainer_instance.giulio_outputs = completions
     return [-abs(50 - len(completion)) for completion in completions]
 
 
@@ -639,6 +640,8 @@ def main():
         print("Calling trainer.train()...")
         trainer.train()
         print("trainer.train() finished.")
+
+        print("OUTPUTS", trainer.giulio_outputs)
 
         print("Loop finished. Moving to next sample.")
 
