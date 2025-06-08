@@ -28,12 +28,13 @@ def main():
 
     training_args = GRPOConfig(
         output_dir="./grpo_trainer_output",
-        per_device_train_batch_size=1,
+        per_device_train_batch_size=2,
         max_steps=1,  # We train for one step per new data sample
         logging_steps=1,
         beta=0.1,
         # to make it run on cpu if no gpu is available
         no_cuda=True,
+        num_generations=2,
     )
 
     # We need to set a generation config for the model to generate completions
@@ -51,7 +52,7 @@ def main():
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        generation_kwargs["pad_token_id"] = tokenizer.eos_token
+        # generation_kwargs["pad_token_id"] = tokenizer.eos_token
 
     # GRPOTrainer instantiation
     # We initialize it with a dummy dataset, as it will be replaced in the loop.
@@ -62,9 +63,9 @@ def main():
         model=model,
         args=training_args,
         train_dataset=initial_dataset,
-        tokenizer=tokenizer,
+        # tokenizer=tokenizer,
         reward_funcs=[reward_len],
-        generation_kwargs=generation_kwargs,
+        # generation_kwargs=generation_kwargs,
     )
 
     print("Starting training loop, simulating a data stream...")
