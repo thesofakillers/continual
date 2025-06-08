@@ -10,5 +10,6 @@ def reward_len(completions, trainer_instance: Trainer, **kwargs):
     # The 'completions' argument is a list of strings
     reward = [-abs(50 - len(completion)) for completion in completions]
     index = np.argmax(reward)
+    print("COMPLETIONS", completions)
     trainer_instance.giulio_output = completions[index]
     return reward

@@ -1,19 +1,37 @@
-import gradio as gr
-
 from harness import model_harness
 
-def echo(message, history):
-    return message
 
-def respond_to_user(message: str, history: list[dict[str, str]]) -> str:
+def chat():
+    print("🤖 Continual Chat Interface")
+    print("Type 'quit' or 'exit' to end the conversation\n")
 
-    messages = history.copy()
-    messages.append({"role": "user", "content": message})
+    history = []
 
-    model_response = model_harness(messages)
+    while True:
+        user_input = input("You: ").strip()
 
-    return model_response
+        if user_input.lower() in ["quit", "exit"]:
+            print("Goodbye!")
+            break
+
+        if not user_input:
+            continue
+
+        messages = history.copy()
+        messages.append({"role": "user", "content": user_input})
+
+        try:
+            response = model_harness(messages)
+            print(f"Assistant: {response}")
+
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": response})
+
+        except Exception as e:
+            print(f"Error: {e}")
+
+        print()
 
 
-demo = gr.ChatInterface(fn=respond_to_user, type="messages", examples=["hello", "hola", "merhaba"], title="Echo Bot")
-demo.launch()
+if __name__ == "__main__":
+    chat()
