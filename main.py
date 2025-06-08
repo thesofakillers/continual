@@ -1,5 +1,6 @@
 from datasets import load_dataset, Dataset
 from trl import GRPOTrainer, GRPOConfig
+from dataclasses import dataclass, field
 
 import warnings
 from contextlib import nullcontext
@@ -52,6 +53,19 @@ def nanstd(tensor: torch.Tensor) -> torch.Tensor:
     count = torch.sum(~torch.isnan(tensor))  # Count of non-NaN values
     variance *= count / (count - 1)  # Bessel's correction
     return torch.sqrt(variance)
+
+
+@dataclass
+class MyGRPOConfig(GRPOConfig):
+    surprisal_reward_moments: Optional[list] = field(
+        default=None,
+        metadata={
+            "help": "Enable surprisal moments reward. Specify moments as a list (e.g., [1, 2] for entropy and varentropy)."
+        },
+    )
+    use_logprob_reward: bool = field(
+        default=True, metadata={"help": "Enable cumulative logprob reward"}
+    )
 
 
 def split_tensor_dict(
@@ -149,14 +163,134 @@ def reward_len(completions, trainer_instance: Trainer, **kwargs):
     It rewards completions that are close to 50 characters.
     """
     # The 'completions' argument is a list of strings
-    print(trainer_instance.giulio_logps)
     trainer_instance.giulio_outputs = completions
     return [-abs(50 - len(completion)) for completion in completions]
+
+
+def reward_cumulative_logprob(
+    completion_ids,
+    trainer_instance: Trainer,
+    prompt_completion_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    **kwargs,
+):
+    """
+    Reward function that minimizes cumulative log probability of the completion,
+    normalized by the vocabulary size.
+    """
+    model = trainer_instance.model
+    # `completion_ids` is a list of lists of token ids
+    logits_to_keep = max(len(c) for c in completion_ids)
+
+    with torch.no_grad():
+        logits = model(
+            prompt_completion_ids,
+            attention_mask=attention_mask,
+            return_dict=True,
+        ).logits
+
+        completion_logits = logits[:, -logits_to_keep - 1 : -1, :]
+        log_probs_dist = torch.nn.functional.log_softmax(completion_logits, dim=-1)
+
+        padded_completion_ids = pad(
+            [
+                torch.tensor(c, device=prompt_completion_ids.device)
+                for c in completion_ids
+            ],
+            padding_value=trainer_instance.processing_class.pad_token_id,
+        )
+
+        log_probs = torch.gather(
+            log_probs_dist, -1, padded_completion_ids.unsqueeze(-1)
+        ).squeeze(-1)
+
+    rewards = []
+    vocab_size = trainer_instance.processing_class.vocab_size
+    for i, completion in enumerate(completion_ids):
+        completion_len = len(completion)
+        cumulative_logprob = log_probs[i, :completion_len].sum()
+        normalized_cumulative_logprob = cumulative_logprob / vocab_size
+        rewards.append(-normalized_cumulative_logprob.item())
+    return rewards
+
+
+def reward_surprisal_moments(
+    completion_ids,
+    trainer_instance: Trainer,
+    prompt_completion_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    **kwargs,
+):
+    """
+    Reward function based on centered moments of surprisal.
+    Calculates a reward based on a list of moments specified in `args.surprisal_reward_moments`.
+    - k=1: entropy (incentivized to be low)
+    - k=2: varentropy (incentivized to be high)
+    - k>2: k-th centered moment of surprisal, with alternating sign incentives.
+    Each moment's contribution is normalized to have the same units.
+    """
+    model = trainer_instance.model
+    moments = trainer_instance.args.surprisal_reward_moments
+    if not moments:
+        return [0.0] * len(completion_ids)
+
+    logits_to_keep = max(len(c) for c in completion_ids)
+
+    with torch.no_grad():
+        logits = model(
+            prompt_completion_ids,
+            attention_mask=attention_mask,
+            return_dict=True,
+        ).logits
+
+        completion_logits = logits[:, -logits_to_keep - 1 : -1, :]
+        log_probs_dist = torch.nn.functional.log_softmax(completion_logits, dim=-1)
+        probs = torch.exp(log_probs_dist)
+        # surprisal for each vocabulary item
+        surprisal_dist = -log_probs_dist  # shape: (batch_size, seq_len, vocab_size)
+
+        token_rewards = torch.zeros(
+            completion_logits.shape[:2], device=logits.device
+        )  # shape: (batch_size, seq_len)
+
+        # E[s] = entropy
+        entropy = torch.sum(
+            probs * surprisal_dist, dim=-1
+        )  # shape: (batch_size, seq_len)
+
+        if 1 in moments:
+            token_rewards += -entropy  # sign is (-1)^1
+
+        centered_surprisal = (
+            surprisal_dist - entropy.unsqueeze(-1)
+        )  # shape: (batch_size, seq_len, vocab_size)
+
+        for k in moments:
+            if k <= 1:
+                continue
+
+            # m_k = E[(s - E[s])^k]
+            m_k = torch.sum(
+                probs * (centered_surprisal**k), dim=-1
+            )  # shape: (batch_size, seq_len)
+
+            # root_k(m_k) = sign(m_k) * |m_k|^(1/k)
+            root_k_mk = torch.sign(m_k) * torch.pow(torch.abs(m_k) + 1e-9, 1.0 / k)
+
+            token_rewards += ((-1) ** k) * root_k_mk
+
+    rewards = []
+    for i, completion in enumerate(completion_ids):
+        completion_len = len(completion)
+        total_reward = token_rewards[i, :completion_len].sum()
+        rewards.append(total_reward.item())
+    return rewards
 
 
 class MyCustomTrainer(GRPOTrainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.giulio_outputs = None
 
     def _generate_and_score_completions(
         self, inputs: list[dict[str, Union[torch.Tensor, Any]]]
@@ -356,13 +490,6 @@ class MyCustomTrainer(GRPOTrainer):
         )
 
         with torch.no_grad():
-            self.giulio_logps = self._get_per_token_logps(
-                self.model,
-                prompt_completion_ids,
-                attention_mask,
-                logits_to_keep,
-                batch_size,
-            )
             # When using num_iterations == 1 and steps_per_generation <= gradient_accumulation_steps
             # old_per_token_logps == per_token_logps, so we can skip it's computation here, and use
             # per_token_logps.detach() instead.
@@ -378,7 +505,6 @@ class MyCustomTrainer(GRPOTrainer):
                     logits_to_keep,
                     batch_size,
                 )
-                # self.giulio_logps = old_per_token_logps
             else:
                 old_per_token_logps = None
 
@@ -450,6 +576,8 @@ class MyCustomTrainer(GRPOTrainer):
                         completions=completions,
                         completion_ids=completion_ids_list,
                         trainer_instance=self,  # RAGa edit
+                        prompt_completion_ids=prompt_completion_ids,
+                        attention_mask=attention_mask,
                         **reward_kwargs,
                     )
                     # Convert None values to NaN
@@ -598,8 +726,8 @@ def main():
     # but let's just take a small slice for this example to run faster.
     full_dataset = full_dataset.select(range(10))
 
-    training_args = GRPOConfig(
-        output_dir="./grpo_trainer_output",
+    training_args = MyGRPOConfig(
+        output_dir= None,
         per_device_train_batch_size=2,
         max_steps=1,  # We train for one step per new data sample
         logging_steps=1,
@@ -614,11 +742,17 @@ def main():
     # The trainer requires a train_dataset on init.
     initial_dataset = Dataset.from_dict({"prompt": [full_dataset[0]["prompt"]]})
 
+    reward_funcs = [reward_len]
+    if training_args.use_logprob_reward:
+        reward_funcs.append(reward_cumulative_logprob)
+    if training_args.surprisal_reward_moments:
+        reward_funcs.append(reward_surprisal_moments)
+
     trainer = MyCustomTrainer(
         model=model,
         args=training_args,
         train_dataset=initial_dataset,
-        reward_funcs=[reward_len],
+        reward_funcs=reward_funcs,
         # generation_kwargs=generation_kwargs,
     )
 
