@@ -34,12 +34,13 @@ def model_harness(messages: list[dict[str, str]]) -> str:
         messages, tokenize=False, add_generation_prompt=True
     )
 
-    dataset_dict = {"prompt": tokenized_chat}
-    # dataset_dict = {"prompt": messages}
-    dataset = Dataset.from_dict(dataset_dict)
+    dataset = Dataset.from_dict({"prompt": [tokenized_chat]})
 
     trainer.train_dataset = dataset
     trainer.train()
     output = trainer.giulio_output
+    output = output[:]
 
-    return output.strip()
+    print("TRAINER OUTPUT", output)
+
+    return output
