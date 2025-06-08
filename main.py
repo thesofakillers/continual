@@ -157,14 +157,7 @@ def nanmax(tensor: torch.Tensor) -> torch.Tensor:
     return torch.max(tensor[~torch.isnan(tensor)])
 
 
-def reward_len(completions, trainer_instance: Trainer, **kwargs):
-    """
-    A simple reward function that rewards completions based on their length.
-    It rewards completions that are close to 50 characters.
-    """
-    # The 'completions' argument is a list of strings
-    trainer_instance.giulio_outputs = completions
-    return [-abs(50 - len(completion)) for completion in completions]
+
 
 
 def reward_cumulative_logprob(
@@ -209,7 +202,7 @@ def reward_cumulative_logprob(
     for i, completion in enumerate(completion_ids):
         completion_len = len(completion)
         cumulative_logprob = log_probs[i, :completion_len].sum()
-        normalized_cumulative_logprob = cumulative_logprob / vocab_size
+        normalized_cumulative_logprob = cumulative_logprob / torch.log2(torch.tensor(vocab_size, dtype=torch.float))
         rewards.append(-normalized_cumulative_logprob.item())
     return rewards
 
@@ -742,7 +735,7 @@ def main():
     # The trainer requires a train_dataset on init.
     initial_dataset = Dataset.from_dict({"prompt": [full_dataset[0]["prompt"]]})
 
-    reward_funcs = [reward_len]
+    reward_funcs = []
     if training_args.use_logprob_reward:
         reward_funcs.append(reward_cumulative_logprob)
     if training_args.surprisal_reward_moments:
