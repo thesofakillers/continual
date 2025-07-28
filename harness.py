@@ -4,7 +4,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from custom_trainer import MyCustomTrainer, MyGRPOConfig
 from rewards import reward_cumulative_logprob, reward_len, reward_surprisal_moments
 
-MODEL = "HuggingFaceTB/SmolLM-135M"
+MODEL = "Qwen/Qwen3-0.6B"
 tokenizer = AutoTokenizer.from_pretrained(MODEL)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL, device_map="auto", torch_dtype="auto"
