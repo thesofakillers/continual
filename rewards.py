@@ -28,37 +28,11 @@ def reward_cumulative_logprob(
     Reward function that minimizes cumulative log probability of the completion,
     normalized by the vocabulary size.
     """
-    model = trainer_instance.model
-    # `completion_ids` is a list of lists of token ids
-    logits_to_keep = max(len(c) for c in completion_ids)
-
-    with torch.no_grad():
-        logits = model(
-            prompt_completion_ids,
-            attention_mask=attention_mask,
-            return_dict=True,
-        ).logits
-
-        completion_logits = logits[:, -logits_to_keep - 1 : -1, :]
-        log_probs_dist = torch.nn.functional.log_softmax(completion_logits, dim=-1)
-
-        padded_completion_ids = pad(
-            [
-                torch.tensor(c, device=prompt_completion_ids.device)
-                for c in completion_ids
-            ],
-            padding_value=trainer_instance.processing_class.pad_token_id,
-        )
-
-        log_probs = torch.gather(
-            log_probs_dist, -1, padded_completion_ids.unsqueeze(-1)
-        ).squeeze(-1)
-
     rewards = []
     vocab_size = trainer_instance.processing_class.vocab_size
     for i, completion in enumerate(completion_ids):
         completion_len = len(completion)
-        cumulative_logprob = log_probs[i, :completion_len].sum()
+        cumulative_logprob = trainer_instance.custom_cached_logps[i, :completion_len].sum()
         normalized_cumulative_logprob = cumulative_logprob / torch.log2(
             torch.tensor(vocab_size, dtype=torch.float)
         )
@@ -91,6 +65,7 @@ def reward_surprisal_moments(
     logits_to_keep = max(len(c) for c in completion_ids)
 
     with torch.no_grad():
+        # TODO: use cached log probs instead, cache the logits if necessary
         logits = model(
             prompt_completion_ids,
             attention_mask=attention_mask,
