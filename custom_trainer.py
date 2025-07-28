@@ -1,4 +1,5 @@
-from trl import GRPOTrainer
+from trl import GRPOTrainer, GRPOConfig
+from dataclasses import dataclass, field
 
 import warnings
 from contextlib import nullcontext
@@ -29,7 +30,11 @@ from trl.models import (
 from trl.trainer.utils import (
     pad,
 )
-import numpy as np
+from trl.import_utils import is_vllm_available
+
+if is_vllm_available():
+    from vllm import SamplingParams  # pyright: ignore
+    from vllm.sampling_params import GuidedDecodingParams  # pyright: ignore
 
 
 # torch.nanstd doesn't exist, so we define it here
@@ -51,6 +56,22 @@ def nanstd(tensor: torch.Tensor) -> torch.Tensor:
     count = torch.sum(~torch.isnan(tensor))  # Count of non-NaN values
     variance *= count / (count - 1)  # Bessel's correction
     return torch.sqrt(variance)
+
+
+@dataclass
+class MyGRPOConfig(GRPOConfig):
+    surprisal_reward_moments: Optional[list] = field(
+        default=None,
+        metadata={
+            "help": "Enable surprisal moments reward. Specify moments as a list (e.g., [1, 2] for entropy and varentropy)."
+        },
+    )
+    use_logprob_reward: bool = field(
+        default=True, metadata={"help": "Enable cumulative logprob reward"}
+    )
+    use_len_reward: bool = field(
+        default=False, metadata={"help": "Enable length reward"}
+    )
 
 
 def split_tensor_dict(
@@ -145,6 +166,7 @@ def nanmax(tensor: torch.Tensor) -> torch.Tensor:
 class MyCustomTrainer(GRPOTrainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.custom_cached_output = None
 
     def _generate_and_score_completions(
         self, inputs: list[dict[str, Union[torch.Tensor, Any]]]
@@ -344,7 +366,7 @@ class MyCustomTrainer(GRPOTrainer):
         )
 
         with torch.no_grad():
-            self.giulio_logps = self._get_per_token_logps(
+            self.custom_cached_logps = self._get_per_token_logps(
                 self.model,
                 prompt_completion_ids,
                 attention_mask,
@@ -366,7 +388,6 @@ class MyCustomTrainer(GRPOTrainer):
                     logits_to_keep,
                     batch_size,
                 )
-                # self.giulio_logps = old_per_token_logps
             else:
                 old_per_token_logps = None
 
@@ -438,6 +459,8 @@ class MyCustomTrainer(GRPOTrainer):
                         completions=completions,
                         completion_ids=completion_ids_list,
                         trainer_instance=self,  # RAGa edit
+                        prompt_completion_ids=prompt_completion_ids,
+                        attention_mask=attention_mask,
                         **reward_kwargs,
                     )
                     # Convert None values to NaN
