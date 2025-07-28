@@ -47,7 +47,7 @@ def model_harness(messages: list[dict[str, str]]) -> str:
 
     trainer.train_dataset = dataset
     trainer.train()
-    output = trainer.giulio_output
+    output = trainer.custom_cached_output
     output = output[:]
 
     print("TRAINER OUTPUT", output)

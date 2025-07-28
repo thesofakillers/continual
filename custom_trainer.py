@@ -1,4 +1,3 @@
-from datasets import load_dataset, Dataset
 from trl import GRPOTrainer, GRPOConfig
 from dataclasses import dataclass, field
 
@@ -167,7 +166,7 @@ def nanmax(tensor: torch.Tensor) -> torch.Tensor:
 class MyCustomTrainer(GRPOTrainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.giulio_outputs = None
+        self.custom_cached_output = None
 
     def _generate_and_score_completions(
         self, inputs: list[dict[str, Union[torch.Tensor, Any]]]
@@ -367,7 +366,7 @@ class MyCustomTrainer(GRPOTrainer):
         )
 
         with torch.no_grad():
-            self.giulio_logps = self._get_per_token_logps(
+            self.custom_cached_logps = self._get_per_token_logps(
                 self.model,
                 prompt_completion_ids,
                 attention_mask,

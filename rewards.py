@@ -14,7 +14,7 @@ def reward_len(completion_ids, trainer_instance: MyCustomTrainer, **kwargs):
     reward = [-abs(50 - len(completion)) for completion in completion_ids]
     index = np.argmax(reward)
     print("COMPLETIONS", completion_ids)
-    trainer_instance.giulio_output = completion_ids[index]
+    trainer_instance.custom_cached_output = completion_ids[index]
     return reward
 
 
