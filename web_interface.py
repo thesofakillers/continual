@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify, send_file
-import os
 from harness import model_harness
 
 app = Flask(__name__)
