@@ -5,16 +5,16 @@ from custom_trainer import MyCustomTrainer
 from trl.trainer.utils import pad
 
 
-def reward_len(completions, trainer_instance: MyCustomTrainer, **kwargs):
+def reward_len(completion_ids, trainer_instance: MyCustomTrainer, **kwargs):
     """
     A simple reward function that rewards completions based on their length.
     It rewards completions that are close to 50 characters.
     """
     # The 'completions' argument is a list of strings
-    reward = [-abs(50 - len(completion)) for completion in completions]
+    reward = [-abs(50 - len(completion)) for completion in completion_ids]
     index = np.argmax(reward)
-    print("COMPLETIONS", completions)
-    trainer_instance.giulio_output = completions[index]
+    print("COMPLETIONS", completion_ids)
+    trainer_instance.giulio_output = completion_ids[index]
     return reward
 
 
