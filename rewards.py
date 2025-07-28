@@ -5,20 +5,19 @@ from custom_trainer import MyCustomTrainer
 from trl.trainer.utils import pad
 
 
-def reward_len(completion_ids, trainer_instance: MyCustomTrainer, **kwargs):
+def reward_len(completions, trainer_instance: MyCustomTrainer, **kwargs):
     """
     A simple reward function that rewards completions based on their length.
     It rewards completions that are close to 50 characters.
     """
     # The 'completions' argument is a list of strings
-    reward = [-abs(50 - len(completion)) for completion in completion_ids]
-    index = np.argmax(reward)
-    print("COMPLETIONS", completion_ids)
-    trainer_instance.custom_cached_output = completion_ids[index]
-    return reward
+    rewards = [-abs(50 - len(completion)) for completion in completions]
+    register_cached_output(completions, rewards, trainer_instance)
+    return rewards
 
 
 def reward_cumulative_logprob(
+    completions,
     completion_ids,
     trainer_instance: MyCustomTrainer,
     prompt_completion_ids: torch.Tensor,
@@ -64,10 +63,12 @@ def reward_cumulative_logprob(
             torch.tensor(vocab_size, dtype=torch.float)
         )
         rewards.append(-normalized_cumulative_logprob.item())
+    register_cached_output(completions, rewards, trainer_instance)
     return rewards
 
 
 def reward_surprisal_moments(
+    completions,
     completion_ids,
     trainer_instance: MyCustomTrainer,
     prompt_completion_ids: torch.Tensor,
@@ -137,4 +138,11 @@ def reward_surprisal_moments(
         completion_len = len(completion)
         total_reward = token_rewards[i, :completion_len].sum()
         rewards.append(total_reward.item())
+    register_cached_output(completions, rewards, trainer_instance)
     return rewards
+
+
+def register_cached_output(completions, rewards, trainer_instance):
+    index = np.argmax(rewards)
+    print("COMPLETIONS", completions)
+    trainer_instance.custom_cached_output = completions[index]
