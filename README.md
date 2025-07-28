@@ -10,19 +10,16 @@ uv sync
 
 To install stuff :
 
-```
+```bash
 uv add <package>
 ```
 
-and then commit
+and then commit pyproject and `uv.lock`
 
+## Usage
 
-TODOs
-- setup outer continual loop 
-(hack is basically to do:
-trainer=GRPOtrainer() # isntantiate trainer
-while True
-    new_data = get_input() # extract the single data sample #there should be a queue 
-    trainer.train_dataset = new_data
-    trainer.train() 
-)
+Run the interface with
+
+```bash
+uv run python web_interface.py
+```
