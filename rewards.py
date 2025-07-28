@@ -1,8 +1,11 @@
-from transformers.trainer import Trainer
 import numpy as np
 
+import torch
+from custom_trainer import MyCustomTrainer
+from trl.trainer.utils import pad
 
-def reward_len(completions, trainer_instance: Trainer, **kwargs):
+
+def reward_len(completions, trainer_instance: MyCustomTrainer, **kwargs):
     """
     A simple reward function that rewards completions based on their length.
     It rewards completions that are close to 50 characters.
@@ -17,7 +20,7 @@ def reward_len(completions, trainer_instance: Trainer, **kwargs):
 
 def reward_cumulative_logprob(
     completion_ids,
-    trainer_instance: Trainer,
+    trainer_instance: MyCustomTrainer,
     prompt_completion_ids: torch.Tensor,
     attention_mask: torch.Tensor,
     **kwargs,
@@ -66,7 +69,7 @@ def reward_cumulative_logprob(
 
 def reward_surprisal_moments(
     completion_ids,
-    trainer_instance: Trainer,
+    trainer_instance: MyCustomTrainer,
     prompt_completion_ids: torch.Tensor,
     attention_mask: torch.Tensor,
     **kwargs,
