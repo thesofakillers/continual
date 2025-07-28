@@ -32,6 +32,7 @@ from trl.trainer.utils import (
     pad,
 )
 from trl.import_utils import is_vllm_available
+
 if is_vllm_available():
     from vllm import SamplingParams  # pyright: ignore
     from vllm.sampling_params import GuidedDecodingParams  # pyright: ignore
@@ -363,6 +364,13 @@ class MyCustomTrainer(GRPOTrainer):
         )
 
         with torch.no_grad():
+            self.giulio_logps = self._get_per_token_logps(
+                self.model,
+                prompt_completion_ids,
+                attention_mask,
+                logits_to_keep,
+                batch_size,
+            )
             # When using num_iterations == 1 and steps_per_generation <= gradient_accumulation_steps
             # old_per_token_logps == per_token_logps, so we can skip it's computation here, and use
             # per_token_logps.detach() instead.
