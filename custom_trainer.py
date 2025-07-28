@@ -70,6 +70,9 @@ class MyGRPOConfig(GRPOConfig):
     use_logprob_reward: bool = field(
         default=True, metadata={"help": "Enable cumulative logprob reward"}
     )
+    use_len_reward: bool = field(
+        default=False, metadata={"help": "Enable length reward"}
+    )
 
 
 def split_tensor_dict(
@@ -592,74 +595,3 @@ class MyCustomTrainer(GRPOTrainer):
             "advantages": advantages,
             "old_per_token_logps": old_per_token_logps,
         }
-
-
-def main():
-    """
-    Main function to run the GRPO training loop, simulating a stream of data.
-    """
-    model_name = "HuggingFaceTB/SmolLM-135M"
-
-    # Load the full dataset from Hugging Face Hub
-    full_dataset = load_dataset("trl-lib/tldr", split="train")
-
-    # We will iterate through the dataset to simulate a stream of data
-    # but let's just take a small slice for this example to run faster.
-    full_dataset = full_dataset.select(range(10))
-
-    training_args = MyGRPOConfig(
-        output_dir=None,
-        per_device_train_batch_size=2,
-        max_steps=1,  # We train for one step per new data sample
-        logging_steps=1,
-        beta=0.1,
-        num_generations=2,
-    )
-
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-
-    # GRPOTrainer instantiation
-    # We initialize it with a dummy dataset, as it will be replaced in the loop.
-    # The trainer requires a train_dataset on init.
-    initial_dataset = Dataset.from_dict({"prompt": [full_dataset[0]["prompt"]]})
-
-    reward_funcs = []
-    if training_args.use_logprob_reward:
-        reward_funcs.append(reward_cumulative_logprob)
-    if training_args.surprisal_reward_moments:
-        reward_funcs.append(reward_surprisal_moments)
-
-    trainer = MyCustomTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=initial_dataset,
-        reward_funcs=reward_funcs,
-        # generation_kwargs=generation_kwargs,
-    )
-
-    print("Starting training loop, simulating a data stream...")
-    # We start from the second sample since we used the first for initialization
-    for i, sample in enumerate(full_dataset.select(range(1, len(full_dataset)))):
-        print(f"\n--- Loop {i + 1} ---")
-
-        # Create a new dataset with the single new sample
-        # The trainer expects a dataset with a 'prompt' column
-        new_data_dict = {"prompt": [sample["prompt"]]}
-        new_dataset = Dataset.from_dict(new_data_dict)
-        print("Generated new data from stream.")
-
-        # Update the trainer's dataset
-        trainer.train_dataset = new_dataset
-        print("Updated trainer's dataset.")
-
-        print("Calling trainer.train()...")
-        trainer.train()
-        print("trainer.train() finished.")
-
-        print("OUTPUTS", trainer.giulio_outputs)
-
-        print("Loop finished. Moving to next sample.")
-
-
-if __name__ == "__main__":
-    main()
