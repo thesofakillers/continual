@@ -2,6 +2,7 @@ from trl import GRPOTrainer, GRPOConfig
 from dataclasses import dataclass, field
 
 import warnings
+import copy
 from contextlib import nullcontext
 from typing import Any, Optional, Union
 
@@ -595,3 +596,20 @@ class MyCustomTrainer(GRPOTrainer):
             "advantages": advantages,
             "old_per_token_logps": old_per_token_logps,
         }
+        
+    def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
+        """
+        Override the log method to capture and store training metrics
+        """
+        mode = "train" if self.model.training else "eval"
+        metrics = {key: sum(val) / len(val) for key, val in self._metrics[mode].items()}  # average the metrics
+        
+        # Capture training metrics before calling parent's log method
+        if mode == "train" and metrics:
+            self.latest_train_metrics = copy.deepcopy(metrics)
+        
+        # Call parent's log method to handle the rest
+        if start_time is not None:
+            super().log(logs, start_time)
+        else:
+            super().log(logs)
