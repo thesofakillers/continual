@@ -166,6 +166,7 @@ def nanmax(tensor: torch.Tensor) -> torch.Tensor:
 class MyCustomTrainer(GRPOTrainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.latest_train_metrics = None
         self.custom_cached_output = None
 
     def _generate_and_score_completions(

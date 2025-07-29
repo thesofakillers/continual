@@ -18,9 +18,9 @@ def chat():
         if not messages:
             return jsonify({"error": "No messages provided"}), 400
 
-        response = model_harness(messages)
+        output, reward = model_harness(messages)
 
-        return jsonify({"response": response})
+        return jsonify({"response": output, "reward": reward})
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
