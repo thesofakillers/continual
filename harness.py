@@ -49,7 +49,7 @@ def model_harness(messages: list[dict[str, str]]) -> str:
     trainer.train()
     output = trainer.custom_cached_output
     output = output[:]
-
+    reward = trainer.latest_train_metrics["reward"]
     print("TRAINER OUTPUT", output)
 
-    return output
+    return output, reward

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Continual Chat Interface</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -18,6 +19,7 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
+            position: relative;
         }
 
         .header {
@@ -25,11 +27,50 @@
             padding: 1rem;
             text-align: center;
             border-bottom: 1px solid #404040;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
         .header h1 {
             font-size: 1.2rem;
             font-weight: 600;
+        }
+
+        .drawer-toggle {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s;
+        }
+
+        .drawer-toggle:hover {
+            background-color: #005a9e;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            transition: margin-right 0.3s ease;
+        }
+
+        .main-content.drawer-open {
+            margin-right: 400px;
+        }
+
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 73px); /* Subtract header height */
         }
 
         .chat-container {
@@ -39,6 +80,7 @@
             max-width: 768px;
             margin: 0 auto;
             width: 100%;
+            height: 0; /* Forces flex to control the height */
         }
 
         .message {
@@ -92,6 +134,9 @@
             background-color: #2d2d2d;
             padding: 1rem;
             border-top: 1px solid #404040;
+            position: sticky;
+            bottom: 0;
+            z-index: 100;
         }
 
         .input-wrapper {
@@ -141,6 +186,8 @@
             text-align: center;
             padding: 1rem;
             color: #888;
+            background-color: #1a1a1a;
+            border-top: 1px solid #404040;
         }
 
         .loading.show {
@@ -158,28 +205,165 @@
             60% { content: '..'; }
             80%, 100% { content: '...'; }
         }
+
+        /* Side Drawer Styles */
+        .side-drawer {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background-color: #2d2d2d;
+            border-left: 1px solid #404040;
+            transition: right 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .side-drawer.open {
+            right: 0;
+        }
+
+        .drawer-header {
+            padding: 1rem;
+            border-bottom: 1px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .drawer-header h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .close-drawer {
+            background: none;
+            border: none;
+            color: #ffffff;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .drawer-content {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .reward-stats {
+            background-color: #1a1a1a;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .chart-container {
+            height: 300px;
+            margin-bottom: 1rem;
+        }
+
+        .clear-data {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            width: 100%;
+        }
+
+        .clear-data:hover {
+            background-color: #c82333;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🕳️ Continual Chat Interface</h1>
+        <button class="drawer-toggle" id="drawerToggle">📊 Rewards</button>
     </div>
 
-    <div class="chat-container" id="chatContainer">
-        <div class="message assistant">
-            <div class="message-avatar">🤖</div>
-            <div class="message-content">
-                Hello! I'm your Continual assistant. How can I help you today?
+    <div class="main-content" id="mainContent">
+        <div class="chat-section">
+            <div class="chat-container" id="chatContainer">
+                <div class="message assistant">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        Hello! I'm your Continual assistant. How can I help you today?
+                    </div>
+                </div>
+            </div>
+
+            <div class="loading" id="loading">Thinking<span></span></div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <input type="text" class="message-input" id="messageInput" placeholder="Type your message here..." />
+                    <button class="send-button" id="sendButton">Send</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="loading" id="loading">Thinking<span></span></div>
-
-    <div class="input-container">
-        <div class="input-wrapper">
-            <input type="text" class="message-input" id="messageInput" placeholder="Type your message here..." />
-            <button class="send-button" id="sendButton">Send</button>
+    <!-- Side Drawer -->
+    <div class="side-drawer" id="sideDrawer">
+        <div class="drawer-header">
+            <h2>📈 Reward Monitor</h2>
+            <button class="close-drawer" id="closeDrawer">×</button>
+        </div>
+        <div class="drawer-content">
+            <div class="reward-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Current Reward:</span>
+                    <span class="stat-value" id="currentReward">N/A</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Average Reward:</span>
+                    <span class="stat-value" id="avgReward">N/A</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Max Reward:</span>
+                    <span class="stat-value" id="maxReward">N/A</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Min Reward:</span>
+                    <span class="stat-value" id="minReward">N/A</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Messages:</span>
+                    <span class="stat-value" id="totalMessages">0</span>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <canvas id="rewardChart"></canvas>
+            </div>
+            
+            <button class="clear-data" id="clearData">Clear Data</button>
         </div>
     </div>
 
@@ -188,8 +372,134 @@
         const messageInput = document.getElementById('messageInput');
         const sendButton = document.getElementById('sendButton');
         const loading = document.getElementById('loading');
+        
+        // Drawer elements
+        const drawerToggle = document.getElementById('drawerToggle');
+        const sideDrawer = document.getElementById('sideDrawer');
+        const closeDrawer = document.getElementById('closeDrawer');
+        const mainContent = document.getElementById('mainContent');
+        const clearData = document.getElementById('clearData');
+        
+        // Stats elements
+        const currentRewardEl = document.getElementById('currentReward');
+        const avgRewardEl = document.getElementById('avgReward');
+        const maxRewardEl = document.getElementById('maxReward');
+        const minRewardEl = document.getElementById('minReward');
+        const totalMessagesEl = document.getElementById('totalMessages');
 
         let chatHistory = [];
+        let rewardHistory = [];
+        let messageCount = 0;
+        let chart;
+
+        // Initialize Chart
+        function initChart() {
+            const ctx = document.getElementById('rewardChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Reward',
+                        data: [],
+                        borderColor: '#007acc',
+                        backgroundColor: 'rgba(0, 122, 204, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#ffffff'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#888'
+                            },
+                            grid: {
+                                color: '#404040'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#888'
+                            },
+                            grid: {
+                                color: '#404040'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update reward statistics and chart
+        function updateRewardData(reward) {
+            messageCount++;
+            rewardHistory.push(reward);
+            
+            // Update stats
+            currentRewardEl.textContent = reward.toFixed(4);
+            totalMessagesEl.textContent = messageCount.toString();
+            
+            if (rewardHistory.length > 0) {
+                const avg = rewardHistory.reduce((a, b) => a + b, 0) / rewardHistory.length;
+                const max = Math.max(...rewardHistory);
+                const min = Math.min(...rewardHistory);
+                
+                avgRewardEl.textContent = avg.toFixed(4);
+                maxRewardEl.textContent = max.toFixed(4);
+                minRewardEl.textContent = min.toFixed(4);
+            }
+            
+            // Update chart
+            chart.data.labels.push(`Msg ${messageCount}`);
+            chart.data.datasets[0].data.push(reward);
+            
+            // Keep only last 20 points for better visibility
+            if (chart.data.labels.length > 20) {
+                chart.data.labels.shift();
+                chart.data.datasets[0].data.shift();
+            }
+            
+            chart.update();
+        }
+
+        // Drawer functionality
+        drawerToggle.addEventListener('click', () => {
+            sideDrawer.classList.add('open');
+            mainContent.classList.add('drawer-open');
+        });
+
+        closeDrawer.addEventListener('click', () => {
+            sideDrawer.classList.remove('open');
+            mainContent.classList.remove('drawer-open');
+        });
+
+        // Clear data functionality
+        clearData.addEventListener('click', () => {
+            if (confirm('Are you sure you want to clear all reward data?')) {
+                rewardHistory = [];
+                messageCount = 0;
+                chart.data.labels = [];
+                chart.data.datasets[0].data = [];
+                chart.update();
+                
+                currentRewardEl.textContent = 'N/A';
+                avgRewardEl.textContent = 'N/A';
+                maxRewardEl.textContent = 'N/A';
+                minRewardEl.textContent = 'N/A';
+                totalMessagesEl.textContent = '0';
+            }
+        });
 
         function addMessage(content, isUser = false) {
             const messageDiv = document.createElement('div');
@@ -239,9 +549,15 @@
 
                 const data = await response.json();
                 const assistantMessage = data.response;
+                const reward = data.reward;
 
                 addMessage(assistantMessage);
                 chatHistory.push({ role: 'assistant', content: assistantMessage });
+
+                // Update reward data
+                if (reward !== undefined && reward !== null) {
+                    updateRewardData(reward);
+                }
 
             } catch (error) {
                 console.error('Error:', error);
@@ -256,6 +572,11 @@
             if (e.key === 'Enter') {
                 sendMessage();
             }
+        });
+
+        // Initialize chart when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
         });
 
         messageInput.focus();
